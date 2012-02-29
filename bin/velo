@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+
+require 'guard'
+require 'httparty'
+require 'digest'
+require 'json'
+require 'fiber'
+
+def make_hash_and_chunks(io, chunk_size)
+  # Mmmmmhmmm... Hash and chunks: Just like mama used to make!
+  puts "hashing"
+
+  sha256 = Digest::SHA256.new
+  chunks = []
+
+  while (chunk = io.read(chunk_size))
+    sha256 << chunk
+    chunks << Digest::SHA1.hexdigest(chunk)
+  end
+
+  results = [sha256.hexdigest, chunks]
+  puts results.inspect
+
+  results
+end
+
+def metainfo(name, io)
+  chunk_size = 256 * 1024
+  sha256, chunks = make_hash_and_chunks(io, chunk_size)
+
+  {
+    "info" => {
+      "name" => name,
+      "length" => io.size,
+      "piece length" => chunk_size,
+      "pieces" => chunks
+    },
+    "meta" => {
+      "sha256" => sha256
+    }
+  }
+end
+
+class Service
+  include HTTParty
+  headers 'Content-Type' => "application/json"
+  base_uri "http://localhost:4567"
+  format :json
+end
+
+def publish(file)
+  io = File.open(file, 'rb')
+  meta = metainfo(file, io)
+  Service.post("/files", :body => meta.to_json)
+end
+
+listener = Guard::Listener.select_and_init(
+  :watchdir => ".",
+  :ignore_paths => [".sharecache"],
+  :watch_all_modifications => true
+)
+
+listener.on_change do |files|
+  files.each do |file|
+    puts "got #{file}"
+    case file.chars.first
+    when "!"
+      # File deleted
+      break
+    else
+      # File added or modified. At present modified is the same as an add. Just
+      # write the file and save it at the end with a de-dupped name
+      publish(file)
+    end
+  end
+end
+
+fsevents = Thread.new do
+  puts "waiting for file changes"
+  listener.start
+end
+
+def download(meta)
+  torrent = meta.bencode
+end
+
+loop do
+  puts "polling for changes"
+  resp = Service.get("/files", :query => {:client_id => Process.pid})
+  download(resp.body)
+  sleep 5
+end
