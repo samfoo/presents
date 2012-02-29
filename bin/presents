@@ -4,41 +4,34 @@ require 'eventmachine'
 require 'httparty'
 require 'digest'
 require 'json'
+require 'cgi'
+require 'base64'
 
 require './lib/torrent/transmission'
 
-def make_hash_and_chunks(io, chunk_size)
-  # Mmmmmhmmm... Hash and chunks: Just like mama used to make!
-  puts "hashing"
-
-  sha256 = Digest::SHA256.new
-  chunks = []
+def mkchunks(io, chunk_size)
+  chunks = ""
 
   while (chunk = io.read(chunk_size))
-    sha256 << chunk
-    chunks << Digest::SHA1.hexdigest(chunk)
+    chunks += Digest::SHA1.digest(chunk)
   end
 
-  results = [sha256.hexdigest, chunks]
-  puts results.inspect
-
-  results
+  chunks
 end
 
-def metainfo(name, io)
+def magnetize(name, info_hash, tracker="http://localhost:8888/announce")
+  "magnet:?xt=urn:btih:#{info_hash}&dn=#{CGI.escape(name)}"
+end
+
+def infodict(name, io)
   chunk_size = 256 * 1024
-  sha256, chunks = make_hash_and_chunks(io, chunk_size)
+  chunks = mkchunks(io, chunk_size)
 
   {
-    "info" => {
-      "name" => name,
-      "length" => io.size,
-      "piece length" => chunk_size,
-      "pieces" => chunks
-    },
-    "meta" => {
-      "sha256" => sha256
-    }
+    "name" => name,
+    "length" => io.size,
+    "piece length" => chunk_size,
+    "pieces" => chunks
   }
 end
 
@@ -51,8 +44,10 @@ end
 
 def publish(file)
   io = File.open(file, 'rb')
-  meta = metainfo(file, io)
-  Service.post("/files", :body => meta.to_json)
+  info = infodict(file, io)
+  info_hash = Digest::SHA1.hexdigest info.bencode
+  info["pieces"] = Base64::encode64(info["pieces"])
+  Service.post("/files", :body => info.to_json)
 end
 
 @trans = Transmission.new("config/transmission")
@@ -68,7 +63,7 @@ def poll_for_updates
   puts "-- polling for changes"
 
   resp = Service.get("/files", :query => {:client_id => Process.pid})
-  download(JSON.load(resp.body))
+  download(JSON.parse(resp.body))
 end
 
 module DeliveryServer
