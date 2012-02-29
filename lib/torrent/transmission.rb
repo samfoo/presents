@@ -42,9 +42,7 @@ class Transmission
   end
 
   def add name
-    if name.kind_of? Hash
-      rpc 'torrent-add', metainfo: Base64::encode64(name.bencode)
-    elsif name.start_with?('magnet:') || File.readable?(name)
+    if name.start_with?('magnet:') || File.readable?(name)
       rpc 'torrent-add', filename: name
     else
       raise BadTorrentSource.new name
