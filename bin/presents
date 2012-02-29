@@ -19,7 +19,7 @@ def mkchunks(io, chunk_size)
   chunks
 end
 
-def magnetize(name, info_hash, tracker="http://localhost:8888/announce")
+def magnetize(name, info_hash)
   "magnet:?xt=urn:btih:#{info_hash}&dn=#{CGI.escape(name)}"
 end
 
@@ -42,31 +42,49 @@ class Service
   format :json
 end
 
-def publish(file)
-  io = File.open(file, 'rb')
-  info = infodict(file, io)
-  info_hash = Digest::SHA1.hexdigest info.bencode
-  info["pieces"] = Base64::encode64(info["pieces"])
-  Service.post("/files", :body => info.to_json)
-end
+class Manager
+  def initialize
+    @trans = Transmission.new("config/transmission")
+    puts "--- " + @trans.inspect
+  end
 
-@trans = Transmission.new("config/transmission")
-def download(magnets)
-  magnets.each do |magnet|
-    puts "adding #{magnet.inspect} to download list"
-    response = @trans.add magnet
-    puts "added #{response}"
+  def publish(file)
+    name = File.basename(file)
+    io = File.open(file, 'rb')
+    info = infodict(name, io)
+    info_hash = Digest::SHA1.hexdigest info.bencode
+    info["pieces"] = Base64::encode64(info["pieces"])
+
+    # Start seeding the file.
+    magnet = magnetize(name, info_hash)
+    id = @trans.add(magnet)
+    puts id.inspect
+    @trans.move([id], File.dirname(file))
+
+    Service.post("/files", :body => info.to_json)
+  end
+
+  def download(magnets)
+    magnets.each do |magnet|
+      puts "adding #{magnet.inspect} to download list"
+      response = @trans.add magnet
+      puts "added #{response}"
+    end
   end
 end
 
-def poll_for_updates
+def poll_for_updates(manager)
   puts "-- polling for changes"
 
   resp = Service.get("/files", :query => {:client_id => Process.pid})
-  download(JSON.parse(resp.body))
+  manager.download(JSON.parse(resp.body))
 end
 
 module DeliveryServer
+  def initialize(manager)
+    @manager = manager
+  end
+
   def post_init
     puts "-- client connected"
   end
@@ -76,7 +94,7 @@ module DeliveryServer
 
     # Yes, yes, publishing blocks. We're not trying for perf for now.
     # TODO: Use a non-blocking http client.
-    publish(path.strip)
+    @manager.publish(path.strip)
 
     close_connection
   end
@@ -87,7 +105,8 @@ module DeliveryServer
 end
 
 EM.run do
-  timer = EM::PeriodicTimer.new(5) { poll_for_updates }
+  manager = Manager.new
+  timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
 
-  EM.start_server "127.0.0.1", 1225, DeliveryServer
+  EM.start_server "127.0.0.1", 1225, DeliveryServer, manager
 end
