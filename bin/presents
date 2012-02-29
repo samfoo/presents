@@ -5,6 +5,8 @@ require 'httparty'
 require 'digest'
 require 'json'
 
+require './lib/torrent/transmission'
+
 def make_hash_and_chunks(io, chunk_size)
   # Mmmmmhmmm... Hash and chunks: Just like mama used to make!
   puts "hashing"
@@ -53,15 +55,20 @@ def publish(file)
   Service.post("/files", :body => meta.to_json)
 end
 
-def download(meta)
-  torrent = meta.bencode
+@trans = Transmission.new("config/transmission")
+def download(magnets)
+  magnets.each do |magnet|
+    puts "adding #{magnet.inspect} to download list"
+    response = @trans.add magnet
+    puts "added #{response}"
+  end
 end
 
 def poll_for_updates
   puts "-- polling for changes"
 
   resp = Service.get("/files", :query => {:client_id => Process.pid})
-  download(resp.body)
+  download(JSON.load(resp.body))
 end
 
 module DeliveryServer
@@ -74,7 +81,7 @@ module DeliveryServer
 
     # Yes, yes, publishing blocks. We're not trying for perf for now.
     # TODO: Use a non-blocking http client.
-    publish(path)
+    publish(path.strip)
 
     close_connection
   end
