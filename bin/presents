@@ -1,10 +1,9 @@
 #!/usr/bin/env ruby
 
-require 'guard'
+require 'eventmachine'
 require 'httparty'
 require 'digest'
 require 'json'
-require 'fiber'
 
 def make_hash_and_chunks(io, chunk_size)
   # Mmmmmhmmm... Hash and chunks: Just like mama used to make!
@@ -54,39 +53,39 @@ def publish(file)
   Service.post("/files", :body => meta.to_json)
 end
 
-listener = Guard::Listener.select_and_init(
-  :watchdir => ".",
-  :ignore_paths => [".sharecache"],
-  :watch_all_modifications => true
-)
-
-listener.on_change do |files|
-  files.each do |file|
-    puts "got #{file}"
-    case file.chars.first
-    when "!"
-      # File deleted
-      break
-    else
-      # File added or modified. At present modified is the same as an add. Just
-      # write the file and save it at the end with a de-dupped name
-      publish(file)
-    end
-  end
-end
-
-fsevents = Thread.new do
-  puts "waiting for file changes"
-  listener.start
-end
-
 def download(meta)
   torrent = meta.bencode
 end
 
-loop do
-  puts "polling for changes"
+def poll_for_updates
+  puts "-- polling for changes"
+
   resp = Service.get("/files", :query => {:client_id => Process.pid})
   download(resp.body)
-  sleep 5
+end
+
+module DeliveryServer
+  def post_init
+    puts "-- client connected"
+  end
+
+  def receive_data(data)
+    path = data
+
+    # Yes, yes, publishing blocks. We're not trying for perf for now.
+    # TODO: Use a non-blocking http client.
+    publish(path)
+
+    close_connection
+  end
+
+  def unbind
+    puts "-- client disconnected"
+  end
+end
+
+EM.run do
+  timer = EM::PeriodicTimer.new(5) { poll_for_updates }
+
+  EM.start_server "127.0.0.1", 1225, DeliveryServer
 end
