@@ -1,6 +1,8 @@
 require 'httparty'
 require 'json'
 require 'yaml'
+require 'base64'
+require 'bencode'
 
 class TransmissionRPCError < Exception
 end
@@ -39,7 +41,9 @@ class Transmission
     rpc 'session-set', 'download-dir' => directory
   end
 
-  def add name
+  def add data
+    if name.kind_of? Hash
+      rpc 'torrent-add', metainfo: Base64::encode64(name.bencode)
     if name.start_with?('magnet:') || File.readable(name)
       rpc 'torrent-add', filename: name
     else
