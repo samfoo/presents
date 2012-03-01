@@ -1,0 +1,44 @@
+#!/bin/sh
+
+test -e
+
+check () {
+	if ! which -s $1; then
+		echo ":-( Couldn't find '$1' on \$PATH"
+		echo
+
+		cat
+
+		exit 1
+	fi
+}
+
+depends () {
+	check transmission-daemon <<-ERR
+Mac OSX:
+
+  $ brew install transmission
+
+Debian / Ubuntu:
+
+  $ apt-get install transmission-cli
+
+Otherwise, pick it up at:
+
+  http://www.transmissionbt.com/
+	ERR
+	
+	check bundle <<-ERR
+Try:
+
+  $ gem install bundler
+	ERR
+}
+
+setup () {
+	bundle install \
+		--binstubs \
+		--without=production
+}
+
+depends && setup && echo OK
