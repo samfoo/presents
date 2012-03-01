@@ -1,31 +1,23 @@
 require File.expand_path 'magnet', File.dirname(__FILE__)
 
-require 'em-http-request'
+require 'httparty'
 require 'json'
 
-class Santa < Struct.new :url
-  def initialize url
-    super url
+class Santa
+  include HTTParty
 
-    @response_cbs = []
-    @request = EventMachine::HttpRequest.new url
+  def initialize(uri)
+    @uri = uri
   end
 
-  def response &block
-    @response_cbs << block
+  def get &block
+    response = self.class.get(@uri)
+    torrents = JSON.parse(response.body) \
+      .map { |t| Magnet.new t['ih'], t['dn'], t['tr'] }
+    block.call torrents unless torrents.empty?
   end
 
-  def get
-    http = @request.get
-    http.callback do
-      torrents = JSON.parse(http.response) \
-        .map { |t| Magnet.new t['ih'], t['dn'], t['tr'] }
-      @response_cbs.each { |a| a.call torrents } unless torrents.empty?
-    end
-  end
-
-  def put magnets
-    seeds = magnets.map &:to_hash
-    @request.put body: seeds.to_json
+  def publish magnets
+    self.class.put(@uri, body: magnets.to_json)
   end
 end

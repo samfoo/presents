@@ -1,7 +1,5 @@
 #!/usr/bin/env ruby
 
-require 'eventmachine'
-
 require './lib/santa'
 require './lib/transmission'
 
@@ -25,18 +23,17 @@ puts "Presents"
 puts "RPC Port: #{port}"
 puts "Directory: #{base_directory}"
 
-EM.run do
-  santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
-  transmission = Transmission.new port, transmission_directory, download_directory
+@transmission = Transmission.new port, transmission_directory, download_directory
+@santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
 
-  santa.response do |magnets|
-    magnets.each { |m| transmission.add m }
+loop do
+  @santa.get do |magnets|
+    magnets.each { |m| @transmission.add m }
   end
 
-  transmission.response do |magnets|
-    santa.put magnets
+  @transmission.get do |magnets|
+    Santa.publish magnets
   end
 
-  EM::PeriodicTimer.new(5) { transmission.get }
-  EM::PeriodicTimer.new(5) { santa.get }
+  sleep 5
 end

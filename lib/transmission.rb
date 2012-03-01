@@ -16,6 +16,9 @@ TorrentStatus = {
 }
 
 class Transmission < Struct.new :port, :config_directory, :download_directory
+  include HTTParty
+  headers 'Content-Type' => 'application/json'
+
   def initialize port, config_directory, download_directory
     super port, config_directory, download_directory
 
@@ -24,23 +27,18 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
     settings = YAML.load_file File.join(config_directory, 'settings.json')
     path = settings['rpc-url']
 
-    @rpc = EventMachine::HttpRequest.new "http://localhost:#{port}#{path}rpc"
+    @uri = "http://localhost:#{port}#{path}rpc"
     @session_id = ''
-    @response_cbs = []
   end
 
-  def response &block
-    @response_cbs << block
-  end
-
-  def get
+  def get &block
     opts = {fields: ['id', 'name', 'status', 'magnetLink']}
     rpc('torrent-get', opts) do |response|
       seeds = response['torrents'].select do |t|
         TorrentStatus[t['status']] == :seed
       end.map { |t| Magnet.parse t['magnetLink'] }
 
-      @response_cbs.each { |s| s.call seeds } unless seeds.empty?
+      block.call seeds unless seeds.empty?
     end
   end
 
@@ -66,24 +64,21 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
   end
 
   def rpc method, args, &block
-    request = @rpc.post \
-      body: {method: method, arguments: args}.to_json,
-      head: {'X-Transmission-Session-Id' => @session_id}
-    request.callback do
-      if request.response_header.status == 409
-        @session_id = request.response_header['X_TRANSMISSION_SESSION_ID']
-        rpc method, args, &block
-      else
-        parsed_response = JSON.parse request.response
+    request = -> { self.class.post @uri, body: {method: method, arguments: args}.to_json }
 
-        if parsed_response['result'] == 'success'
-          block.call parsed_response['arguments'] if block_given?
-        else
-          # TODO: This exception stops the app, but the call stack is lost.
-          # Why?!
-          raise TransmissionRPCError.new parsed_response['result']
-        end
-      end
+    response = request.call
+
+    parsed_response = if response.code == 409
+                        self.class.headers 'X-Transmission-Session-Id' => response.headers['x-transmission-session-id']
+                        request.call.parsed_response
+                      else
+                        response.parsed_response
+                      end
+
+    if parsed_response['result'] == 'success'
+      block.call parsed_response['arguments'] if block_given?
+    else
+      raise TransmissionRPCError.new parsed_response['result']
     end
   end
 
