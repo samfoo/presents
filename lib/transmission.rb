@@ -45,10 +45,21 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
   end
 
   def add magnet
-    rpc('torrent-get', ids: [magnet.info_hash], fields: []) do |response|
+    rpc('torrent-get', ids: [magnet.info_hash], fields: ['trackers']) do |response|
       if response['torrents'].empty?
         rpc('torrent-add', filename: magnet.to_s) do
           puts "Downloading #{magnet.display_name} ..."
+        end
+      else
+        trackers = response['torrents'].map do |torrent|
+          torrent['trackers'].map { |tr| tr['announce'] }
+        end.flatten
+
+        new_trackers = magnet.trackers - trackers
+        unless new_trackers.empty?
+          rpc('torrent-set', ids: [magnet.info_hash], trackerAdd: new_trackers) do
+            puts "Fixed trackers on #{magnet.info_hash}"
+          end
         end
       end
     end
