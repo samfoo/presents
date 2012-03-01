@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 
+require 'set'
+
 require './lib/santa'
 require './lib/transmission'
-
-require 'pp'
 
 base_directory = ARGV[1]
 raise "#{base_directory} does not exist or isn't a directory" \
@@ -25,13 +25,19 @@ puts "Directory: #{base_directory}"
 
 @transmission = Transmission.new port, transmission_directory, download_directory
 @santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
+@seen_magnets = Set.new
 
 loop do
   @santa.get do |magnets|
+    magnets.each do |m|
+      puts "--- got #{m.display_name}" unless @seen_magnets.member? m.info_hash
+      @seen_magnets << m.info_hash
+    end
     magnets.each { |m| @transmission.add m }
   end
 
   @transmission.get do |magnets|
+    puts "--- publishing #{magnets}"
     Santa.publish magnets
   end
 
