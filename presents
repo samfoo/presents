@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+
+require 'eventmachine'
+
+require './lib/santa'
+require './lib/transmission'
+
+require 'pp'
+
+base_directory = ARGV[1]
+raise "#{base_directory} does not exist or isn't a directory" \
+  unless Dir.exists? base_directory
+
+state_directory = File.join base_directory, '.presents'
+transmission_directory = File.join state_directory, 'transmission'
+download_directory = base_directory
+
+raise "#{base_directory} doesn't exist" unless Dir.exist? base_directory
+Dir.mkdir state_directory unless Dir.exist? state_directory
+
+port = ARGV[0].to_i
+raise "Port is too low" unless port > 1024
+
+puts "Presents"
+puts "RPC Port: #{port}"
+puts "Directory: #{base_directory}"
+
+EM.run do
+  santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
+  transmission = Transmission.new port, transmission_directory, download_directory
+
+  santa.response do |magnets|
+    magnets.each { |m| transmission.add m }
+  end
+
+  transmission.response do |magnets|
+    santa.put magnets
+  end
+
+  EM::PeriodicTimer.new(5) { transmission.get }
+  EM::PeriodicTimer.new(5) { santa.get }
+end
