@@ -22,6 +22,7 @@ DB.create_table :files do
   Int :piece_length
   String :pieces
   DateTime :published_at
+  Int :client_id
 end
 
 def files
@@ -37,7 +38,7 @@ def magnetize(file, tracker="http://localhost:8888/announce")
     "name" => file[:name],
     "length" => file[:length],
     "piece length" => file[:piece_length],
-    "pieces" => file[:pieces]
+    "pieces" => Base64::decode64(file[:pieces])
   }
 
   info_hash = Digest::SHA1.hexdigest info.bencode
@@ -46,23 +47,23 @@ def magnetize(file, tracker="http://localhost:8888/announce")
 end
 
 get '/files' do
-  client_id = params["client_id"]
-  puts "serving to #{client_id}"
+  client = params["client_id"].to_i
+  puts "serving to #{client}"
 
-  client_already_exists = clients.where(:client_id => client_id).first
+  client_already_exists = clients.where(:client_id => client).first
   puts client_already_exists.inspect
   if !client_already_exists
-    puts "#{client_id} doesn't exist, so I'll create him"
-    clients.insert(:client_id => client_id, :last_updated_at => Time.now)
+    puts "#{client} doesn't exist, so I'll create him"
+    clients.insert(:client_id => client, :last_updated_at => Time.now)
   end
 
-  last_updated_at = clients.where(:client_id => client_id).first[:last_updated_at]
+  last_updated_at = clients.where(:client_id => client).first[:last_updated_at]
 
-  puts "finding stale files for #{client_id}"
-  publications = files.filter { published_at > last_updated_at }
+  puts "finding stale files for #{client}"
+  publications = files.filter { (published_at > last_updated_at) & ~{:client_id => client} }
 
-  puts "updating #{client_id}'s last checkin time"
-  clients.where(:client_id => client_id).update(:last_updated_at => Time.now)
+  puts "updating #{client}'s last checkin time"
+  clients.where(:client_id => client).update(:last_updated_at => Time.now)
 
   publications.map { |p| magnetize(p) }.to_json
 end
@@ -74,8 +75,9 @@ post '/files' do
     name: data["name"],
     length: data["length"].to_i,
     piece_length: data["piece length"].to_i,
-    pieces: Base64::decode64(data["pieces"]),
-    published_at: Time.now
+    pieces: data["pieces"],
+    published_at: Time.now,
+    client_id: params["client_id"]
   )
 
   {"message" => "Santa thanks you for your present."}.to_json

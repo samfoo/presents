@@ -73,7 +73,7 @@ class Manager
     @torrents << id
 
     info["pieces"] = Base64::encode64(info["pieces"])
-    Service.post("/files", :body => info.to_json)
+    Service.post("/files", :query => {:client_id => Process.pid}, :body => info.to_json)
   end
 
   def download(magnets)
