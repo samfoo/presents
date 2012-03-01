@@ -1,14 +1,9 @@
-require 'httparty'
+require File.expand_path 'magnet', File.dirname(__FILE__)
+
 require 'json'
 require 'yaml'
-require 'base64'
-require 'bencode'
 
-class TransmissionRPCError < Exception
-end
-
-class BadTorrentSource < Exception
-end
+class TransmissionRPCError < Exception; end
 
 TorrentStatus = {
   0 => :stopped,
@@ -20,62 +15,102 @@ TorrentStatus = {
   6 => :seed,
 }
 
-class Transmission
-  include HTTParty
+class Transmission < Struct.new :port, :config_directory, :download_directory
+  def initialize port, config_directory, download_directory
+    super port, config_directory, download_directory
 
-  headers 'Content-Type' => 'application/json'
+    start
 
-  def initialize config_path
-    settings = YAML.load_file File.join(config_path, 'settings.json')
+    settings = YAML.load_file File.join(config_directory, 'settings.json')
+    path = settings['rpc-url']
 
-    @path = settings['rpc-url']
-    @port = settings['rpc-port']
+    @rpc = EventMachine::HttpRequest.new "http://localhost:#{port}#{path}rpc"
+    @session_id = ''
+    @response_cbs = []
   end
 
-  def download_dir
-    response = rpc 'session-get', {}
-    response['download-dir']
+  def response &block
+    @response_cbs << block
   end
 
-  def download_dir= directory
-    rpc 'session-set', 'download-dir' => directory
-  end
+  def get
+    opts = {fields: ['id', 'name', 'status', 'magnetLink']}
+    rpc('torrent-get', opts) do |response|
 
-  def add name
-    if name.start_with?('magnet:') || File.readable?(name)
-      rpc 'torrent-add', filename: name
-    else
-      raise BadTorrentSource.new name
+      seeds = response['torrents'].select do |t|
+        TorrentStatus[t['status']] == :seed
+      end
+      
+      state = seeds.map do |t|
+        magnet = Magnet.parse t['magnetLink']
+        {ih: magnet.info_hash, dn: magnet.display_name}
+      end
+
+      @response_cbs.each { |s| s.call state } unless state.empty?
     end
   end
 
-  def move ids, location
-    rpc 'torrent-set-location', location: location, move: true
-  end
-
-  def status ids=[]
-    opts = {fields: ['id', 'name', 'status']}
-    opts[ids] = ids unless ids.empty?
-
-    response = rpc 'torrent-get', opts
-    response['torrents'].each do |t|
-      t['status'] = TorrentStatus[t['status']]
+  def add magnet
+    rpc('torrent-get', ids: [magnet.info_hash], fields: []) do |response|
+      if response['torrents'].empty?
+        rpc('torrent-add', filename: magnet.to_s) do
+          puts "Downloading #{magnet.display_name} ..."
+        end
+      end
     end
   end
 
-  def rpc method, args
-    request = -> { self.class.post "http://localhost:#{@port}#{@path}rpc", body: {method: method, arguments: args}.to_json }
+  def rpc method, args, &block
+    request = @rpc.post \
+      body: {method: method, arguments: args}.to_json,
+      head: {'X-Transmission-Session-Id' => @session_id}
+    request.callback do
+      if request.response_header.status == 409
+        @session_id = request.response_header['X_TRANSMISSION_SESSION_ID']
+        rpc method, args, &block
+      else
+        parsed_response = JSON.parse request.response
 
-    response = request.call
+        if parsed_response['result'] == 'success' && block_given?
+          block.call parsed_response['arguments']
+        else
+          raise TransmissionRPCError.new parsed_response['result']
+        end
+      end
+    end
+  end
 
-    parsed_response = if response.code == 409
-                        self.class.headers 'X-Transmission-Session-Id' => response.headers['x-transmission-session-id']
-                        request.call.parsed_response
-                      else
-                        response.parsed_response
-                      end
+  private
 
-    raise TransmissionRPCError.new(parsed_response['result']) unless parsed_response['result'] == 'success'
-    parsed_response['arguments']
+  def start
+    # TODO: Check the PID to prevent duplicate processes.
+    transmission_pid = fork do
+      incomplete_directory = File.join config_directory, 'incomplete'
+
+      opts = [
+        "--config-dir #{config_directory}",
+        "--incomplete-dir #{incomplete_directory}",
+        "--download-dir #{download_directory}",
+        "--port #{port}",
+        "--peerport #{port + 1}",
+
+        '--dht',
+        '--encryption-preferred',
+        '--lpd',
+        '--portmap',
+        '--utp',
+
+        '--foreground',
+      ]
+
+      exec 'transmission-daemon ' + opts.join(' ')
+    end
+    Signal.trap('EXIT') do
+      Process.kill 'TERM', transmission_pid
+      Process.wait
+    end
+
+    # TODO: Properly wait for settings.json
+    sleep 1
   end
 end

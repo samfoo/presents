@@ -1,112 +1,41 @@
 #!/usr/bin/env ruby
 
 require 'eventmachine'
-require 'httparty'
-require 'digest'
-require 'json'
-require 'cgi'
-require 'base64'
 
-require './lib/torrent/transmission'
+require './lib/santa'
+require './lib/transmission'
 
-def mkchunks(io, chunk_size)
-  chunks = ""
+require 'pp'
 
-  while (chunk = io.read(chunk_size))
-    chunks += Digest::SHA1.digest(chunk)
-  end
+base_directory = ARGV[1]
+raise "#{base_directory} does not exist or isn't a directory" \
+  unless Dir.exists? base_directory
 
-  chunks
-end
+state_directory = File.join base_directory, '.presents'
+transmission_directory = File.join state_directory, 'transmission'
+download_directory = base_directory
 
-def magnetize(name, info_hash)
-  "magnet:?xt=urn:btih:#{info_hash}&dn=#{CGI.escape(name)}"
-end
+raise "#{base_directory} doesn't exist" unless Dir.exist? base_directory
+Dir.mkdir state_directory unless Dir.exist? state_directory
 
-def infodict(name, io)
-  chunk_size = 256 * 1024
-  chunks = mkchunks(io, chunk_size)
+port = ARGV[0].to_i
+raise "Port is too low" unless port > 1024
 
-  {
-    "name" => name,
-    "length" => io.size,
-    "piece length" => chunk_size,
-    "pieces" => chunks
-  }
-end
-
-class Service
-  include HTTParty
-  headers 'Content-Type' => "application/json"
-  base_uri "http://localhost:4567"
-  format :json
-end
-
-class Manager
-  def initialize
-    @trans = Transmission.new("config/transmission")
-    puts "--- " + @trans.inspect
-  end
-
-  def publish(file)
-    name = File.basename(file)
-    io = File.open(file, 'rb')
-    info = infodict(name, io)
-    info_hash = Digest::SHA1.hexdigest info.bencode
-    info["pieces"] = Base64::encode64(info["pieces"])
-
-    # Start seeding the file.
-    magnet = magnetize(name, info_hash)
-    id = @trans.add(magnet)
-    puts id.inspect
-    @trans.move([id], File.dirname(file))
-
-    Service.post("/files", :body => info.to_json)
-  end
-
-  def download(magnets)
-    magnets.each do |magnet|
-      puts "adding #{magnet.inspect} to download list"
-      response = @trans.add magnet
-      puts "added #{response}"
-    end
-  end
-end
-
-def poll_for_updates(manager)
-  puts "-- polling for changes"
-
-  resp = Service.get("/files", :query => {:client_id => Process.pid})
-  manager.download(JSON.parse(resp.body))
-end
-
-module DeliveryServer
-  def initialize(manager)
-    @manager = manager
-  end
-
-  def post_init
-    puts "-- client connected"
-  end
-
-  def receive_data(data)
-    path = data
-
-    # Yes, yes, publishing blocks. We're not trying for perf for now.
-    # TODO: Use a non-blocking http client.
-    @manager.publish(path.strip)
-
-    close_connection
-  end
-
-  def unbind
-    puts "-- client disconnected"
-  end
-end
+puts "Presents"
+puts "RPC Port: #{port}"
+puts "Directory: #{base_directory}"
 
 EM.run do
-  manager = Manager.new
-  timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
+  santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
+  transmission = Transmission.new port, transmission_directory, download_directory
 
-  EM.start_server "127.0.0.1", 1225, DeliveryServer, manager
+  santa.response do |magnets|
+    magnets.each { |m| transmission.add m }
+  end
+  transmission.response do |magnets|
+    santa.put magnets
+  end
+
+  EM::PeriodicTimer.new(5) { transmission.get }
+  EM::PeriodicTimer.new(5) { santa.get }
 end
