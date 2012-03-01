@@ -24,15 +24,20 @@ def magnetize(name, info_hash)
 end
 
 def infodict(name, io)
-  chunk_size = 256 * 1024
+  chunk_size = 32768
   chunks = mkchunks(io, chunk_size)
 
   {
-    "name" => name,
     "length" => io.size,
+    "name" => name,
     "piece length" => chunk_size,
-    "pieces" => chunks
+    "pieces" => chunks,
+    "private" => 0
   }
+end
+
+def torrentize(infodict)
+  {"info" => infodict}
 end
 
 class Service
@@ -57,17 +62,18 @@ class Manager
     name = File.basename(file)
     io = File.open(file, 'rb')
     info = infodict(name, io)
-    info_hash = Digest::SHA1.hexdigest info.bencode
-    info["pieces"] = Base64::encode64(info["pieces"])
+    torrent = torrentize(info)
+
+    info_hash = Digest::SHA1.hexdigest(info.bencode)
+    torrent = Base64::encode64(torrentize(info).bencode)
 
     # Start seeding the file.
-    magnet = magnetize(name, info_hash)
-    torrent = @trans.add(magnet)
-    id = torrent["torrent-added"]["id"]
+    resp = @trans.add_seed(torrent, File.dirname(file))
+    id = resp["torrent-added"]["id"]
     @torrents << id
-    @trans.move([id], File.dirname(file))
 
-    #Service.post("/files", :body => info.to_json)
+    info["pieces"] = Base64::encode64(info["pieces"])
+    Service.post("/files", :body => info.to_json)
   end
 
   def download(magnets)
@@ -112,7 +118,7 @@ end
 
 EM.run do
   manager = Manager.new
-  #timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
+  timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
   status_checks = EM::PeriodicTimer.new(5) { puts manager.status.inspect }
 
   EM.start_server "127.0.0.1", 1225, DeliveryServer, manager
