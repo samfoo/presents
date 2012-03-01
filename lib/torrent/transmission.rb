@@ -41,10 +41,6 @@ class Transmission
     rpc 'session-set', 'download-dir' => directory
   end
 
-  def add_seed torrent, dir
-    rpc 'torrent-add', "metainfo" => torrent, "download-dir" => dir
-  end
-
   def add name
     if name.start_with?('magnet:') || File.readable?(name)
       rpc 'torrent-add', filename: name
@@ -54,20 +50,7 @@ class Transmission
   end
 
   def move ids, location
-    params = { ids: ids, location: location, move: false }
-    rpc 'torrent-set-location', params
-  end
-
-  def verify ids
-    rpc "torrent-verify", ids: ids
-  end
-
-  def start ids
-    rpc "torrent-start-now", ids: ids
-  end
-
-  def stop ids
-    rpc "torrent-stop", ids: ids
+    rpc 'torrent-set-location', ids: ids, location: location, move: true
   end
 
   def status ids=[]
