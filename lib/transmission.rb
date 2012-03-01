@@ -65,9 +65,11 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
       else
         parsed_response = JSON.parse request.response
 
-        if parsed_response['result'] == 'success' && block_given?
-          block.call parsed_response['arguments']
+        if parsed_response['result'] == 'success'
+          block.call parsed_response['arguments'] if block_given?
         else
+          # TODO: This exception stops the app, but the call stack is lost.
+          # Why?!
           raise TransmissionRPCError.new parsed_response['result']
         end
       end
