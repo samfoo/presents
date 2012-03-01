@@ -50,7 +50,7 @@ class Transmission
   end
 
   def move ids, location
-    rpc 'torrent-set-location', ids: ids, location: location, move: true
+    rpc 'torrent-set-location', location: location, move: true
   end
 
   def status ids=[]

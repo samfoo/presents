@@ -44,13 +44,8 @@ end
 
 class Manager
   def initialize
-    @torrents = []
     @trans = Transmission.new("config/transmission")
     puts "--- " + @trans.inspect
-  end
-
-  def status
-    @trans.status @torrents
   end
 
   def publish(file)
@@ -62,12 +57,11 @@ class Manager
 
     # Start seeding the file.
     magnet = magnetize(name, info_hash)
-    torrent = @trans.add(magnet)
-    id = torrent["torrent-added"]["id"]
-    @torrents << id
+    id = @trans.add(magnet)
+    puts id.inspect
     @trans.move([id], File.dirname(file))
 
-    #Service.post("/files", :body => info.to_json)
+    Service.post("/files", :body => info.to_json)
   end
 
   def download(magnets)
@@ -112,8 +106,7 @@ end
 
 EM.run do
   manager = Manager.new
-  #timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
-  status_checks = EM::PeriodicTimer.new(5) { puts manager.status.inspect }
+  timer = EM::PeriodicTimer.new(5) { poll_for_updates(manager) }
 
   EM.start_server "127.0.0.1", 1225, DeliveryServer, manager
 end
