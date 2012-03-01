@@ -32,6 +32,7 @@ EM.run do
   santa.response do |magnets|
     magnets.each { |m| transmission.add m }
   end
+
   transmission.response do |magnets|
     santa.put magnets
   end

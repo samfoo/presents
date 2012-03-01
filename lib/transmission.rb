@@ -36,17 +36,11 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
   def get
     opts = {fields: ['id', 'name', 'status', 'magnetLink']}
     rpc('torrent-get', opts) do |response|
-
       seeds = response['torrents'].select do |t|
         TorrentStatus[t['status']] == :seed
-      end
-      
-      state = seeds.map do |t|
-        magnet = Magnet.parse t['magnetLink']
-        {ih: magnet.info_hash, dn: magnet.display_name}
-      end
+      end.map { |t| Magnet.parse t['magnetLink'] }
 
-      @response_cbs.each { |s| s.call state } unless state.empty?
+      @response_cbs.each { |s| s.call seeds } unless seeds.empty?
     end
   end
 
@@ -83,10 +77,14 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
   private
 
   def start
+    incomplete_directory = File.join config_directory, 'incomplete'
+
+    [config_directory, incomplete_directory].each do |d|
+      Dir.mkdir d unless Dir.exists? d
+    end
+
     # TODO: Check the PID to prevent duplicate processes.
     transmission_pid = fork do
-      incomplete_directory = File.join config_directory, 'incomplete'
-
       opts = [
         "--config-dir #{config_directory}",
         "--incomplete-dir #{incomplete_directory}",
