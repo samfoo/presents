@@ -18,6 +18,7 @@ EOS
   opt :dir, "Directory to download to", :type => String
   opt :user, "Email of the user", :type => String
   opt :port, "RPC port for transmission", :default => 1225
+  opt :server, "Santa server to listen to", :default => "http://vivid-sword-3891.herokuapp.com/"
 end
 
 base_directory = opts[:dir]
@@ -35,7 +36,7 @@ puts "RPC Port: #{port}"
 puts "Directory: #{base_directory}"
 
 @transmission = Transmission.new port, transmission_directory, base_directory
-@santa = Santa.new 'http://vivid-sword-3891.herokuapp.com/'
+@santa = Santa.new opts[:server]
 @seen_magnets = Set.new
 
 loop do
