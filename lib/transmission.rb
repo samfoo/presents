@@ -2,6 +2,7 @@ require File.expand_path 'magnet', File.dirname(__FILE__)
 
 require 'json'
 require 'yaml'
+require 'httparty'
 
 class TransmissionRPCError < Exception; end
 
