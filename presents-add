@@ -1,48 +1,7 @@
 #!/usr/bin/env ruby
 
-require 'bencode'
-require 'digest'
-require 'tempfile'
+recipient = ARGV[0]
+path = File.expand_path(ARGV[1])
+port = ARGV[2] || 9876
 
-require './lib/transmission'
-
-require 'pp'
-
-port = ARGV[0].to_i
-raise "Port #{port} is too low" unless port > 1024
-
-target = ARGV[1]
-raise "#{target} does not exist" unless File.exist? target
-
-Tempfile.open('torrent') do |tf|
-  raise "No makin the torrent" \
-    unless system 'transmission-create',
-      '--outfile', tf.path,
-      target
-
-  torrent = BEncode.load_file tf.path
-  info_hash = Digest::SHA1.hexdigest torrent['info'].bencode
-
-  pp info_hash
-
-  raise "No addn the torrent" \
-    unless system 'transmission-remote',
-      port.to_s,
-      '--start-paused',
-      '--add', tf.path
-
-  raise "No pointn the torrent" \
-    unless system 'transmission-remote',
-      port.to_s,
-      '--torrent', info_hash,
-      '--find', File.dirname(target)
-
-  raise "No startn the torrent" \
-    unless system 'transmission-remote',
-      port.to_s,
-      '--torrent', info_hash,
-      '--start',
-      '--verify'
-
-  puts "OK #{info_hash}"
-end
+`echo "#{recipient},#{path}" | nc localhost #{port}`

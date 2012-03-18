@@ -19,11 +19,11 @@ EOS
   opt :user, "Email of the user", :type => String
   opt :port, "RPC port for transmission", :default => 1225
   opt :server, "Santa server to listen to", :default => "http://vivid-sword-3891.herokuapp.com/"
-  opt :recipient, "The recipient to send files to", :type => String
+  opt :pport, "Port to publish torrents to", :default => 9876
 end
 
 base_directory = opts[:dir]
-Trollop::die :dir, "must exist" unless Dir.exists? base_directory
+Trollop::die :dir, "must exist" unless Dir.exist? base_directory
 
 state_directory = File.join base_directory, '.presents'
 Dir.mkdir state_directory unless Dir.exist? state_directory
@@ -40,19 +40,42 @@ puts "Directory: #{base_directory}"
 @santa = Santa.new opts[:user], opts[:server]
 @seen_magnets = Set.new
 
-loop do
-  @santa.get do |magnets|
-    magnets.each do |m|
-      puts "--- got #{m.display_name}" unless @seen_magnets.member? m.info_hash
-      @seen_magnets << m.info_hash
+poller = Thread.new do
+  loop do
+    @santa.get do |magnets|
+      magnets.each do |m|
+        puts "--- got #{m.display_name}" unless @seen_magnets.member? m.info_hash
+        @seen_magnets << m.info_hash
+      end
+      magnets.each { |m| @transmission.add m }
     end
-    magnets.each { |m| @transmission.add m }
+
+    sleep 5
+  end
+end
+
+require 'eventmachine'
+
+module Receiver
+  def initialize santa, transmission
+    @santa = santa
+    @transmission = transmission
   end
 
-  @transmission.get do |magnets|
-    puts "--- publishing #{magnets}"
-    Santa.publish opts[:recipient], magnets
-  end
+  def receive_data data
+    close_connection
 
-  sleep 5
+    data.strip!
+    recipient = data[0..data.index(',')-1]
+    filename = data[data.index(',')+1..-1]
+
+    puts "--- seeding '#{filename}'"
+    magnet = @transmission.seed filename
+    puts "--- publishing to '#{recipient}' '#{magnet}'"
+    @santa.publish recipient, magnet
+  end
+end
+
+EM.run do 
+  EM.start_server "127.0.0.1", opts[:pport], Receiver, @santa, @transmission
 end

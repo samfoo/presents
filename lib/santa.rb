@@ -19,8 +19,8 @@ class Santa
     block.call torrents unless torrents.empty?
   end
 
-  def publish recipient, magnets
-    puts magnets.inspect
-    self.class.put(URI::join(@uri, "#{@user}/publications/#{recipient}").to_s, body: magnets.map { |m| m.to_hash }.to_json)
+  def publish recipient, magnet
+    url = URI::join(@uri, "#{@user}/publications/#{recipient}").to_s
+    self.class.put(url, body: [magnet.to_hash].to_json)
   end
 end

@@ -3,6 +3,8 @@ require File.expand_path 'magnet', File.dirname(__FILE__)
 require 'json'
 require 'yaml'
 require 'httparty'
+require 'tempfile'
+require 'bencode'
 
 class TransmissionRPCError < Exception; end
 
@@ -30,6 +32,39 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
 
     @uri = "http://localhost:#{port}#{path}rpc"
     @session_id = ''
+  end
+
+  def seed target
+    Tempfile.open('torrent') do |tf|
+      raise "No makin the torrent" \
+        unless system 'transmission-create',
+          '--outfile', tf.path,
+          target
+
+      torrent = BEncode.load_file tf.path
+      info_hash = Digest::SHA1.hexdigest torrent['info'].bencode
+
+      raise "No addn the torrent" \
+        unless system 'transmission-remote',
+          port.to_s,
+          '--start-paused',
+          '--add', tf.path
+
+      raise "No pointn the torrent" \
+        unless system 'transmission-remote',
+          port.to_s,
+          '--torrent', info_hash,
+          '--find', File.dirname(target)
+
+      raise "No startn the torrent" \
+        unless system 'transmission-remote',
+          port.to_s,
+          '--torrent', info_hash,
+          '--start',
+          '--verify'
+
+      return Magnet.new(info_hash, File.basename(target), [])
+    end
   end
 
   def get &block
