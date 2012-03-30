@@ -1,0 +1,19 @@
+!!! 5
+%html
+  %head
+    %script{:type => "text/javascript", :src => "scripts/jquery-1.7.2.min.js"}
+
+  %body.config
+    .email
+      %label{:for => "email"} Username
+      %input{:type => "email", :name => "email"}
+
+    .directory
+      %label{:for => "directory"} Directory
+      %input{:type => "text", :name => "directory"}
+
+    .port
+      %label{:for => "port"} RPC Port
+      %input{:type => "number", :name => "port"}
+
+    %button#go Go
