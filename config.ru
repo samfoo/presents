@@ -1,8 +1,10 @@
 require './presents'
 
-set :user, 'sam@ifdown.net'
-set :directory, 'foo'
-set :rpc_port, 5555
+require 'sinatra/config_file'
+
+set :environments, %w{sam scott someone}
+set :root, Dir.getwd
+config_file 'config.yml'
 
 raise "base dir must exists" unless Dir.exist? settings.directory
 

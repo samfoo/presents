@@ -1,0 +1,12 @@
+sam:
+    user: sam@ifdown.net
+    directory: sam
+    rpc_port: 5555
+scott:
+    user: scott@quadhome.com
+    directory: scott
+    rpc_port: 6555
+someone:
+    user: someone@example.com
+    directory: someone
+    rpc_port: 7555
