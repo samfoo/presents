@@ -32,3 +32,11 @@ body.index {
     margin-top: 120px;
     text-align: center;
 }
+
+.transfers {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 50%;
+    background-color: #ccc;
+}

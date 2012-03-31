@@ -1,3 +1,4 @@
+require 'set'
 require 'sinatra'
 require 'coffee-script'
 
@@ -24,6 +25,7 @@ class PresentsApp < Sinatra::Application
   def initialize
     @torrents = Torrents
     @santa = PubSub
+    @seen = Set.new
 
     super
   end
@@ -31,7 +33,13 @@ class PresentsApp < Sinatra::Application
   get '/presents' do
     # TODO: This should just all be done by JS instead of proxying.
     content_type 'application/json'
-    @santa.receive.to_json
+
+    magnets = @santa.receive
+
+    magnets.select! { |m| !@seen.include? m.info_hash }
+    magnets.each { |m| @seen << m.info_hash }
+
+    magnets.map { |m| m.to_hash }.to_json
   end
 
   post '/:recipient/presents' do
