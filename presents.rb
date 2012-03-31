@@ -42,6 +42,16 @@ class PresentsApp < Sinatra::Application
     magnets.map { |m| m.to_hash }.to_json
   end
 
+  post '/presents' do
+    # TODO: This should just all be done by JS instead of proxying.
+    magnets = JSON.parse request.body.read
+    magnets.each do |m|
+      @torrents.add Magnet.new(m['ih'], m['dn'], m['tr'])
+    end
+
+    'OK'
+  end
+
   post '/:recipient/presents' do
     path = params['path']
 

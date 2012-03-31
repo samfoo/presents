@@ -6,6 +6,13 @@ require 'httparty'
 require 'tempfile'
 require 'bencode'
 
+# Yes, I know we're hardcoding the trackers in two places now. It's the easiest way at the moment.
+TRACKERS = [
+  'udp://tracker.openbittorrent.com:80/announce',
+  'http://announce.torrentsmd.com:8080/announce.php',
+  'udp://tracker.publicbt.com:80/announce',
+]
+
 class TransmissionRPCError < Exception; end
 
 TorrentStatus = {
@@ -62,6 +69,14 @@ class Transmission < Struct.new :port, :config_directory, :download_directory
           '--torrent', info_hash,
           '--start',
           '--verify'
+
+      TRACKERS.each do |t|
+        raise "No talkn the torrent" \
+          unless system 'transmission-remote',
+            port.to_s,
+            '--torrent', info_hash,
+            '--tracker-add', t
+      end
 
       return Magnet.new(info_hash, File.basename(target), [])
     end
