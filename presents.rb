@@ -34,12 +34,17 @@ class PresentsApp < Sinatra::Application
     @santa.receive.to_json
   end
 
-  put '/:recipient/presents' do
+  post '/:recipient/presents' do
     path = params['path']
+
+    puts "Starting to seed #{path}"
     magnet = @torrents.seed path
+
+    # TODO: This should just all be done by JS instead of proxying. The tricky
+    # bit here is getting trasmission to seed the file before publishing it.
     @santa.publish params['recipient'], magnet
 
     content_type 'application/json'
-    magnet.to_has.to_json
+    magnet.to_hash.to_json
   end
 end
