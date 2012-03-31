@@ -13,10 +13,14 @@ class Santa
   end
 
   def get &block
-    response = self.class.get(URI::join(@uri, "#{@user}/publications").to_s)
-    torrents = JSON.parse(response.body) \
-      .map { |t| Magnet.new t['ih'], t['dn'], t['tr'] }
+    torrents = receive
     block.call torrents unless torrents.empty?
+  end
+
+  def receive
+    response = self.class.get(URI::join(@uri, "#{@user}/publications").to_s)
+    JSON.parse(response.body) \
+      .map { |t| Magnet.new t['ih'], t['dn'], t['tr'] }
   end
 
   def publish recipient, magnet

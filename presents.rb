@@ -23,12 +23,15 @@ end
 class PresentsApp < Sinatra::Application
   def initialize
     @torrents = Torrents
+    @santa = PubSub
+
+    super
   end
 
-  get '/:recipient/presents' do
-    @santa.get do |magnets|
-      magnets.each { |m| @torrents.add m }
-    end
+  get '/presents' do
+    # TODO: This should just all be done by JS instead of proxying.
+    content_type 'application/json'
+    @santa.receive.to_json
   end
 
   put '/:recipient/presents' do
